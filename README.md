@@ -56,6 +56,10 @@ lines. Three cards wide in a split pane still works.
   2733273  4-02:11:08  python train.py --fold 3
 ```
 
+<img src="assets/gpu-pane.png" width="360" alt="The real GPU pane on an idle four-card server: each card at 0% and marked free">
+
+The block above shows the layout with example accounts. This is the pane itself, on a server where all four cards happen to be free.
+
 Every card with its utilization, memory, temperature, and **the account using
 it**, so you can see at a glance whether the card you want is free or someone
 else's run is on it. Under that, your own watched jobs with PID and elapsed

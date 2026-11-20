@@ -1,5 +1,11 @@
 # gpu-panel
 
+![gpu-panel: 어느 GPU 가 돌고 있고 누가 쓰는지, Claude Code 프롬프트 밑에](assets/banner.png)
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+![Requires Claude Code 2.1.287+](https://img.shields.io/badge/Claude%20Code-2.1.287%2B-555)
+![Needs nvidia-smi for the GPU fields](https://img.shields.io/badge/GPU-nvidia--smi-76B900)
+
 GPU 서버를 여럿이 나눠 쓰는 사람을 위한 Claude Code 패널.
 
 프롬프트 밑 한 줄에 어느 GPU 가 돌고 있는지, 내 학습이 몇 개 떠 있는지, 플랜
@@ -8,14 +14,9 @@ GPU 서버를 여럿이 나눠 쓰는 사람을 위한 Claude Code 패널.
 
 [English](README.md)
 
-```
-  ⚠ auto mode on (shift+tab to cycle)
+![프롬프트 밑 패널: 세션 이름, 5시간·7일 한도, 컨텍스트, 돌고 있는 GPU, 에이전트, effort·모델·compact 버튼](assets/panel.png)
 
-  ┌───────────────────────────────────────────────────────────────────────┐
-  │ my session  5h ━━ 4% 4h20m  7d ━ 29% 4d0h  ctx 18%  gpu 2:15%  job 2  │
-  │ effort low [medium] high xhigh │ model [fable 5.2] opus 5.5 │ ⟲ compact│
-  └───────────────────────────────────────────────────────────────────────┘
-```
+실제 세션 화면. 2번·3번 카드가 13%로 돌고 있고, 비어 있는 두 장은 줄에 나오지 않는다.
 
 이런 패널은 대개 프롬프트 위에 붙고 플랜 사용량을 보여 준다. 이것은 프롬프트
 아래 힌트 줄 옆에 자리를 잡고, 먼저 보는 것이 남들과 같이 쓰는 그 기계다.

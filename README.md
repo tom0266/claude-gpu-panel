@@ -1,5 +1,11 @@
 # gpu-panel
 
+![gpu-panel: which GPUs are busy and who is on them, under your Claude Code prompt](assets/banner.png)
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+![Requires Claude Code 2.1.287+](https://img.shields.io/badge/Claude%20Code-2.1.287%2B-555)
+![Needs nvidia-smi for the GPU fields](https://img.shields.io/badge/GPU-nvidia--smi-76B900)
+
 A Claude Code panel for people who share a GPU server.
 
 One line under your prompt shows which GPUs are busy, how many training jobs you
@@ -8,14 +14,9 @@ with every card, who is using it, and your jobs with their elapsed time.
 
 [한국어](README.ko.md)
 
-```
-  ⚠ auto mode on (shift+tab to cycle)
+![The panel under the prompt: session name, 5h and 7d plan usage, context, busy GPUs, agents, and effort, model and compact buttons](assets/panel.png)
 
-  ┌───────────────────────────────────────────────────────────────────────┐
-  │ my session  5h ━━ 4% 4h20m  7d ━ 29% 4d0h  ctx 18%  gpu 2:15%  job 2  │
-  │ effort low [medium] high xhigh │ model [fable 5.2] opus 5.5 │ ⟲ compact│
-  └───────────────────────────────────────────────────────────────────────┘
-```
+A real session. Cards 2 and 3 are busy at 13%; the other two are free and stay out of the line.
 
 Most panels like this live above the prompt and show plan usage. This one sits
 below the prompt, next to the hint line, and its first concern is the machine

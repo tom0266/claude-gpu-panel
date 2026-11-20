@@ -3,7 +3,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { Agents, Detail, Gpu, GpuDetail, Job, Limit } from '../types'
 
-// 한도 알림 임계치(%). 창이 초기화되면(resetsAt 이 바뀌면) 다시 알린다.
+// Usage toast thresholds (%). A window warns again once it resets (resetsAt changes).
 const THRESHOLD: Record<string, number> = { five_hour: 80, seven_day: 70 }
 const LABEL: Record<string, string> = { five_hour: '5h', seven_day: '7d' }
 const EFFORTS = ['low', 'medium', 'high', 'xhigh'] as const
@@ -12,19 +12,19 @@ const NO_AGENTS: Agents = { running: 0, done: 0, failed: 0, models: '' }
 const PANE = 'gpu-panel-detail'
 const QUIET_STATUS = ['no active cases', 'waste≈0']
 
-// 색은 여기서만 바꾼다(hex 또는 테마 키). 어두운 테마 기준.
+// Change colors here only (hex or a theme key). Tuned for a dark theme.
 const C = {
   border: '#4b5263',
   label: '#7f8798',
   ok: '#7ee787',
   warn: '#f2cc60',
   bad: '#ff7b72',
-  chipBg: '#2d323d', // 선택 안 된 버튼
+  chipBg: '#2d323d', // unselected button
   chipFg: '#c9d1d9',
-  effort: '#d19a66', // 선택된 effort
-  model: '#61afef', // 현재 모델
+  effort: '#d19a66', // selected effort
+  model: '#61afef', // current model
   action: '#c678dd', // compact
-  onColor: '#1b1f27', // 색 버튼 위 글자
+  onColor: '#1b1f27', // text on a colored button
 }
 
 const limits = atom({ plugin: 'gpu-panel', key: 'limits' } as const, [] as Limit[])
@@ -42,7 +42,7 @@ const warned = atom({ plugin: 'gpu-panel', key: 'warned' } as const, [] as strin
 const shortModel = (id?: string) =>
   ['fable', 'opus', 'sonnet', 'haiku'].find(k => (id ?? '').toLowerCase().includes(k)) ?? '?'
 
-// 'claude-opus-5-5[1m]' → '5.5'. 날짜 접미사(8자리)는 버전으로 읽지 않는다.
+// 'claude-opus-5-5[1m]' → '5.5'. A date suffix (8 digits) is not read as a version.
 const versionOf = (id?: string) => {
   const m = /(?:fable|opus|sonnet|haiku)-(\d{1,2})(?:-(\d{1,2}))?(?!\d)/.exec((id ?? '').toLowerCase())
   return m ? (m[2] ? `${m[1]}.${m[2]}` : m[1]!) : ''
@@ -76,14 +76,14 @@ async function refreshAgents($: EngineInterface) {
     models: Object.entries(counts).map(([m, n]) => `${m} ${n}`).join(', '),
   }
   const prev = await read($, agents)
-  // 값이 같으면 쓰지 않는다(쓰면 band 가 다시 그려진다).
+  // Skip the write when nothing changed (a write redraws the panel).
   if (JSON.stringify(prev) !== JSON.stringify(next)) await update($, agents, () => next)
 
   const id = await $.session.model()
   const m = shortModel(id)
   if ((await read($, model)) !== m) await update($, model, () => m)
 
-  // 별칭이 어느 버전인지 알려 주는 API 가 없어, 실제로 본 모델 id 에서 배워 둔다(세션 간 저장).
+  // No API says which version an alias means, so learn it from model ids actually seen (kept across sessions).
   const known = await read($, versions)
   const seenNow: Record<string, string> = {}
   for (const mid of [id, ...list.map(a => a.model)]) {
@@ -97,7 +97,7 @@ async function refreshAgents($: EngineInterface) {
   }
 }
 
-// nvidia-smi 가 없는 기기(Mac)에서는 null 로 남아 GPU 칸이 그려지지 않는다.
+// On a machine without nvidia-smi (a Mac) this stays null and the GPU field is not drawn.
 async function refreshGpus($: EngineInterface) {
   const { exitCode, stdout } = await $.process.run(
     ['nvidia-smi', '--query-gpu=index,utilization.gpu,memory.used', '--format=csv,noheader,nounits'],
@@ -114,8 +114,8 @@ async function refreshGpus($: EngineInterface) {
   if (JSON.stringify(prev) !== JSON.stringify(next)) await update($, gpus, () => next)
 }
 
-// 내 프로세스 중 감시 패턴(~/.claude/statusline-jobs.txt, 한 줄에 하나)에 걸리는 명령줄 수.
-// 예전 statusline.py 와 같은 규칙: 같은 명령줄은 한 번만 센다.
+// How many of my processes match a watch pattern (~/.claude/statusline-jobs.txt, one per line).
+// Identical command lines are counted once.
 async function refreshJobs($: EngineInterface) {
   const home = (await $.env.get('HOME')) ?? ''
   const user = (await $.env.get('USER')) ?? ''
@@ -131,7 +131,7 @@ async function refreshJobs($: EngineInterface) {
   if ((await read($, jobs)) !== seen.size) await update($, jobs, () => seen.size)
 }
 
-// 상세 pane 용: GPU 4장 전체(누가 쓰는지 포함)와 내 감시 대상 job 목록. pane 을 연 뒤에만 돈다.
+// For the detail pane: every card (with who is on it) and my watched jobs. Runs only while the pane is open.
 async function refreshDetail($: EngineInterface) {
   const smi = (query: string, fields: string) =>
     $.process.run(['nvidia-smi', `--query-${query}=${fields}`, '--format=csv,noheader,nounits'], { timeoutMs: 3000 })
@@ -180,14 +180,14 @@ async function refreshDetail($: EngineInterface) {
   if (JSON.stringify(await read($, detail)) !== JSON.stringify(next)) await update($, detail, () => next)
 }
 
-// 누른 직후 바로 연다: 조회를 먼저 기다리면 "사람이 연 창"으로 취급되지 않아 좁은 화면에서 안 뜬다.
+// Open first, query after: awaiting the query first loses the "opened by a person" allowance and the pane will not open in a narrow terminal.
 async function openDetail($: EngineInterface) {
   const opened = await $.ui.open({ id: PANE, title: 'GPU · jobs' })
-  if (!opened.isPlaced) $.ui.toast(`GPU 창을 열지 못함: ${opened.reason}`)
+  if (!opened.isPlaced) $.ui.toast(`Could not open the GPU pane: ${opened.reason}`)
   await refreshDetail($).catch(() => {})
 }
 
-// 세션 이름을 주는 API 가 없어 기록 파일에서 읽는다: /rename 한 이름이 우선, 없으면 자동 제목.
+// No API gives the session name, so read it from the transcript: the /rename name first, else the generated title.
 async function refreshName($: EngineInterface) {
   const { transcriptPath } = await $.session.info()
   const { stdout } = await $.process.run(
@@ -219,7 +219,7 @@ async function applyUsage(
     const at = THRESHOLD[l.kind]
     const id = `${l.kind}@${l.resetsAt ?? ''}`
     if (at === undefined || l.percentUsed < at || seen.includes(id)) continue
-    $.ui.toast(`${LABEL[l.kind] ?? l.kind} 한도 ${l.percentUsed}% (임계치 ${at}%)`)
+    $.ui.toast(`${LABEL[l.kind] ?? l.kind} usage at ${l.percentUsed}% (threshold ${at}%)`)
     await update($, warned, w => [...w.slice(-8), id])
   }
 }
@@ -241,7 +241,7 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const result = await next(e)
     await applyUsage($, await $.session.usage())
-    await $.command.register({ name: 'gpu', description: 'GPU 4장 전체와 내 학습 job 목록을 옆 창으로 연다' })
+    await $.command.register({ name: 'gpu', description: 'Open a pane with every GPU and your training jobs' })
     const stored = await $.store.get('versions')
     if (stored && typeof stored === 'object') await update($, versions, () => stored as Record<string, string>)
     await refreshAgents($)
@@ -254,11 +254,11 @@ export const register: Register = on => {
     timer = $.clock.every(5000, () => {
       void refreshAgents($).catch(() => {})
       if (++tick % 2 === 0) {
-        void refreshGpus($).catch(() => {}) // GPU·job 은 10초마다
+        void refreshGpus($).catch(() => {}) // GPUs and jobs every 10 s
         void refreshJobs($).catch(() => {})
         if (isDetailOpen) void refreshDetail($).catch(() => {})
       }
-      if (tick % 6 === 0) void refreshName($).catch(() => {}) // 이름은 30초마다
+      if (tick % 6 === 0) void refreshName($).catch(() => {}) // session name every 30 s
     })
     return result
   })
@@ -266,7 +266,7 @@ export const register: Register = on => {
   on('command.run', { command: 'gpu' }, async $ => {
     isDetailOpen = true
     await openDetail($)
-    return { text: 'GPU · jobs 창을 열었습니다.' }
+    return { text: 'Opened the GPU · jobs pane.' }
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
@@ -276,7 +276,7 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column">
         <Text bold color={C.model}>GPU</Text>
-        {d.gpus.length === 0 && <Text color={C.label}>nvidia-smi 결과 없음</Text>}
+        {d.gpus.length === 0 && <Text color={C.label}>no output from nvidia-smi</Text>}
         {d.gpus.map(g => {
           const [filled, empty] = bar(g.util, 8)
           return (
@@ -295,7 +295,7 @@ export const register: Register = on => {
         <Box marginTop={1}>
           <Text bold color={C.model}>Jobs</Text>
         </Box>
-        {d.jobs.length === 0 && <Text color={C.label}>감시 대상 job 없음</Text>}
+        {d.jobs.length === 0 && <Text color={C.label}>no watched jobs</Text>}
         {d.jobs.map(j => (
           <Text key={`j-${j.pid}`} wrap="truncate-end">
             <Text color={C.label}>{j.pid} </Text>
@@ -307,7 +307,7 @@ export const register: Register = on => {
     )
   })
 
-  // /effort 를 직접 입력해 바꿔도 강조가 따라가게 한다.
+  // Keep the highlight in step when /effort is typed by hand.
   on('command.run', { command: 'effort' }, async ($, e, next) => {
     const result = await next(e)
     const level = String(e.args ?? '').trim()
@@ -315,7 +315,7 @@ export const register: Register = on => {
     return result
   }).catch(($, e, next) => next(e))
 
-  // 다른 mod 의 상태 줄 중 "할 말 없음"에 해당하는 것은 지운다(실제 경고는 그대로 둔다).
+  // Drop other mods' status lines that say nothing is wrong (real warnings stay).
   on('ui.status', ($, e, next) =>
     next(e.text !== undefined && QUIET_STATUS.some(q => e.text!.includes(q)) ? { ...e, text: undefined } : e),
   ).catch(($, e, next) => next(e))
@@ -325,14 +325,14 @@ export const register: Register = on => {
     return next(e)
   })
 
-  // 서브에이전트 생성을 막는 자리이므로 여기서는 절대 실패를 내보내지 않는다.
+  // This hook can block a subagent from starting, so it must never let a failure out.
   on('agent.spawn', async ($, e, next) => {
     const result = await next(e)
     void refreshAgents($).catch(() => {})
     return result
   }).catch(($, e, next) => next(e))
 
-  // 프롬프트 아래 힌트 줄 자리: 엔진의 힌트 줄은 그대로 두고 그 밑에 패널을 붙인다.
+  // The hint slot under the prompt: keep the engine's hint line and stack the panel below it.
   on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
     const hint = await next(e)
 
@@ -347,11 +347,11 @@ export const register: Register = on => {
     const name = await read($, sessionName)
     const jobCount = await read($, jobs)
     const vs = await read($, versions)
-    // 110칸 미만이면 테두리·막대·라벨을 빼고 두 줄에 맞춘다.
+    // Under 110 columns, drop the border, bars and labels and fit in two lines.
     const isNarrow = (e.viewport?.columns ?? 120) < 110
     const nameMax = isNarrow ? 14 : 28
 
-    // 연산 중이면 사용률, 메모리만 잡혀 있으면 용량(statusline.py 와 같은 규칙).
+    // Utilization when computing; memory when a card is only holding memory.
     const busy = (gs ?? []).filter(g => g.util >= 5 || g.memGb >= 1)
 
     const chip = (key: string, label: string, isOn: boolean, onColor: string, press: () => void) => (

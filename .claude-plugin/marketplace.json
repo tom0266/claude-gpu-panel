@@ -1,0 +1,16 @@
+{
+  "name": "claude-gpu-panel",
+  "owner": {
+    "name": "tom0266"
+  },
+  "plugins": [
+    {
+      "name": "gpu-panel",
+      "source": "./gpu-panel",
+      "description": "A panel under the prompt for shared GPU servers: which cards are busy and who is on them, your running training jobs, plan limits and context, with effort/model/compact buttons."
+    }
+  ],
+  "metadata": {
+    "description": "A Claude Code panel for people who share a GPU server."
+  }
+}

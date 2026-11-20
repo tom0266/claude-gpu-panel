@@ -1,0 +1,8 @@
+{
+  "name": "gpu-panel",
+  "version": "0.1.0",
+  "description": "A panel under the prompt for shared GPU servers: which cards are busy and who is on them, your running training jobs, plan limits and context, with effort/model/compact buttons.",
+  "keywords": ["gpu", "nvidia-smi", "usage", "panel", "jobs", "hpc"],
+  "license": "MIT",
+  "types": "./types/index.d.ts"
+}

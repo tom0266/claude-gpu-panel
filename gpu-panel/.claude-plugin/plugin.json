@@ -1,8 +1,51 @@
 {
   "name": "gpu-panel",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A panel under the prompt for shared GPU servers: which cards are busy and who is on them, your running training jobs, plan limits and context, with effort/model/compact buttons.",
+  "author": {
+    "name": "tom0266",
+    "url": "https://github.com/tom0266"
+  },
+  "homepage": "https://github.com/tom0266/claude-gpu-panel",
+  "repository": "https://github.com/tom0266/claude-gpu-panel",
   "keywords": ["gpu", "nvidia-smi", "usage", "panel", "jobs", "hpc"],
   "license": "MIT",
-  "types": "./types/index.d.ts"
+  "types": "./types/index.d.ts",
+  "network": {
+    "hosts": []
+  },
+  "userConfig": {
+    "language": {
+      "type": "string",
+      "title": "Language",
+      "description": "Language of the usage toast, the /gpu description and the pane's empty states. The panel's own labels (5h, ctx, gpu) stay as they are.",
+      "options": ["en", "ko"],
+      "default": "en"
+    },
+    "palette": {
+      "type": "string",
+      "title": "Color palette",
+      "description": "dark: fixed colors tuned for a dark terminal. theme: follow the Claude Code theme, for light terminals.",
+      "options": ["dark", "theme"],
+      "default": "dark"
+    },
+    "fiveHourThreshold": {
+      "type": "number",
+      "title": "5-hour usage warning (%)",
+      "description": "Show a toast once per window when 5-hour plan usage reaches this percentage.",
+      "default": 80
+    },
+    "sevenDayThreshold": {
+      "type": "number",
+      "title": "7-day usage warning (%)",
+      "description": "Show a toast once per window when 7-day plan usage reaches this percentage.",
+      "default": 70
+    },
+    "hideQuietStatus": {
+      "type": "boolean",
+      "title": "Hide other mods' all-clear status lines",
+      "description": "Hide status lines from other mods that only say nothing is wrong (\"no active cases\", \"waste≈0\"). Warnings always stay. Off by default because it removes another mod's output.",
+      "default": false
+    }
+  }
 }

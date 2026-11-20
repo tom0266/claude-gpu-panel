@@ -1,31 +1,18 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Agents, Detail, Gpu, GpuDetail, Job, Limit } from '../types'
+import type { Agents, Detail, Gpu, Limit } from '../types'
+import {
+  appPids, bar, countJobs, gpuDetails, isQuietStatus, listJobs, paletteOf, parseGpus, parseOwners, parsePatterns, pctColor,
+  remaining, shortModel, stringsOf, thresholdsOf, versionOf,
+} from './lib'
+import type { Strings } from './lib'
 
-// Usage toast thresholds (%). A window warns again once it resets (resetsAt changes).
-const THRESHOLD: Record<string, number> = { five_hour: 80, seven_day: 70 }
 const LABEL: Record<string, string> = { five_hour: '5h', seven_day: '7d' }
 const EFFORTS = ['low', 'medium', 'high', 'xhigh'] as const
 const MODELS = ['fable', 'opus', 'sonnet'] as const
 const NO_AGENTS: Agents = { running: 0, done: 0, failed: 0, models: '' }
 const PANE = 'gpu-panel-detail'
-const QUIET_STATUS = ['no active cases', 'waste≈0']
-
-// Change colors here only (hex or a theme key). Tuned for a dark theme.
-const C = {
-  border: '#4b5263',
-  label: '#7f8798',
-  ok: '#7ee787',
-  warn: '#f2cc60',
-  bad: '#ff7b72',
-  chipBg: '#2d323d', // unselected button
-  chipFg: '#c9d1d9',
-  effort: '#d19a66', // selected effort
-  model: '#61afef', // current model
-  action: '#c678dd', // compact
-  onColor: '#1b1f27', // text on a colored button
-}
 
 const limits = atom({ plugin: 'gpu-panel', key: 'limits' } as const, [] as Limit[])
 const contextPercent = atom({ plugin: 'gpu-panel', key: 'contextPercent' } as const, null as number | null)
@@ -38,31 +25,6 @@ const jobs = atom({ plugin: 'gpu-panel', key: 'jobs' } as const, 0)
 const detail = atom({ plugin: 'gpu-panel', key: 'detail' } as const, { gpus: [], jobs: [] } as Detail)
 const sessionName = atom({ plugin: 'gpu-panel', key: 'sessionName' } as const, '')
 const warned = atom({ plugin: 'gpu-panel', key: 'warned' } as const, [] as string[])
-
-const shortModel = (id?: string) =>
-  ['fable', 'opus', 'sonnet', 'haiku'].find(k => (id ?? '').toLowerCase().includes(k)) ?? '?'
-
-// 'claude-opus-5-5[1m]' → '5.5'. A date suffix (8 digits) is not read as a version.
-const versionOf = (id?: string) => {
-  const m = /(?:fable|opus|sonnet|haiku)-(\d{1,2})(?:-(\d{1,2}))?(?!\d)/.exec((id ?? '').toLowerCase())
-  return m ? (m[2] ? `${m[1]}.${m[2]}` : m[1]!) : ''
-}
-
-const bar = (pct: number, cells = 8) => {
-  const filled = Math.max(0, Math.min(cells, Math.round((pct / 100) * cells)))
-  return ['━'.repeat(filled), '━'.repeat(cells - filled)] as const
-}
-
-const pctColor = (pct: number) => (pct >= 85 ? C.bad : pct >= 60 ? C.warn : C.ok)
-
-function remaining(resetsAt: string | undefined, nowMs: number): string {
-  const ms = resetsAt ? Date.parse(resetsAt) - nowMs : NaN
-  if (!(ms > 0)) return ''
-  const min = Math.floor(ms / 60000)
-  if (min < 60) return `${min}m`
-  const h = Math.floor(min / 60)
-  return h < 24 ? `${h}h${String(min % 60).padStart(2, '0')}m` : `${Math.floor(h / 24)}d${h % 24}h`
-}
 
 async function refreshAgents($: EngineInterface) {
   const list = await $.agent.list()
@@ -104,12 +66,7 @@ async function refreshGpus($: EngineInterface) {
     { timeoutMs: 3000 },
   )
   if (exitCode !== 0) return
-  const next: Gpu[] = stdout
-    .trim()
-    .split('\n')
-    .map(line => line.split(',').map(v => Number(v.trim())))
-    .filter(v => v.length === 3 && v.every(Number.isFinite))
-    .map(([index = 0, util = 0, memMb = 0]) => ({ index, util, memGb: Math.floor(memMb / 1024) }))
+  const next: Gpu[] = parseGpus(stdout)
   const prev = await read($, gpus)
   if (JSON.stringify(prev) !== JSON.stringify(next)) await update($, gpus, () => next)
 }
@@ -119,71 +76,39 @@ async function refreshGpus($: EngineInterface) {
 async function refreshJobs($: EngineInterface) {
   const home = (await $.env.get('HOME')) ?? ''
   const user = (await $.env.get('USER')) ?? ''
-  const patterns = (await $.fs.read(`${home}/.claude/statusline-jobs.txt`))
-    .split('\n')
-    .map(l => l.trim())
-    .filter(l => l !== '' && !l.startsWith('#'))
+  const patterns = parsePatterns(await $.fs.read(`${home}/.claude/statusline-jobs.txt`))
   if (patterns.length === 0 || user === '') return
   const { stdout } = await $.process.run(['ps', '-u', user, '-o', 'args='], { timeoutMs: 3000 })
-  const seen = new Set(
-    stdout.split('\n').filter(l => patterns.some(p => l.includes(p))).map(l => l.trim().slice(0, 160)),
-  )
-  if ((await read($, jobs)) !== seen.size) await update($, jobs, () => seen.size)
+  const count = countJobs(stdout, patterns)
+  if ((await read($, jobs)) !== count) await update($, jobs, () => count)
 }
 
 // For the detail pane: every card (with who is on it) and my watched jobs. Runs only while the pane is open.
 async function refreshDetail($: EngineInterface) {
   const smi = (query: string, fields: string) =>
     $.process.run(['nvidia-smi', `--query-${query}=${fields}`, '--format=csv,noheader,nounits'], { timeoutMs: 3000 })
-  const rows = (out: string) => out.trim().split('\n').filter(l => l !== '').map(l => l.split(',').map(v => v.trim()))
 
-  const cards = rows((await smi('gpu', 'uuid,index,utilization.gpu,memory.used,memory.total,temperature.gpu')).stdout)
-  const apps = rows((await smi('compute-apps', 'gpu_uuid,pid,used_memory')).stdout)
-  const pids = apps.map(a => a[1] ?? '').filter(v => v !== '')
-  const owner: Record<string, string> = {}
-  if (pids.length > 0) {
-    const { stdout } = await $.process.run(['ps', '-o', 'pid=,user=', '-p', pids.join(',')], { timeoutMs: 3000 })
-    for (const line of stdout.split('\n')) {
-      const [pid, user] = line.trim().split(/\s+/)
-      if (pid && user) owner[pid] = user
-    }
-  }
-  const gpuList: GpuDetail[] = cards.map(([uuid = '', index, util, used, total, temp]) => ({
-    index: Number(index),
-    util: Number(util),
-    memGb: Math.round(Number(used) / 1024),
-    totalGb: Math.round(Number(total) / 1024),
-    temp: Number(temp),
-    users: apps
-      .filter(a => a[0] === uuid)
-      .map(a => `${owner[a[1] ?? ''] ?? '?'} ${Math.round(Number(a[2]) / 1024)}G`)
-      .join(', '),
-  }))
+  const cardsOut = (await smi('gpu', 'uuid,index,utilization.gpu,memory.used,memory.total,temperature.gpu')).stdout
+  const appsOut = (await smi('compute-apps', 'gpu_uuid,pid,used_memory')).stdout
+  const pids = appPids(appsOut)
+  const owner =
+    pids.length > 0
+      ? parseOwners((await $.process.run(['ps', '-o', 'pid=,user=', '-p', pids.join(',')], { timeoutMs: 3000 })).stdout)
+      : {}
 
   const home = (await $.env.get('HOME')) ?? ''
   const user = (await $.env.get('USER')) ?? ''
-  const patterns = (await $.fs.read(`${home}/.claude/statusline-jobs.txt`))
-    .split('\n')
-    .map(l => l.trim())
-    .filter(l => l !== '' && !l.startsWith('#'))
+  const patterns = parsePatterns(await $.fs.read(`${home}/.claude/statusline-jobs.txt`))
   const { stdout } = await $.process.run(['ps', '-u', user, '-o', 'pid=,etime=,args='], { timeoutMs: 3000 })
-  const seen = new Set<string>()
-  const jobList: Job[] = []
-  for (const line of stdout.split('\n')) {
-    const m = /^\s*(\d+)\s+(\S+)\s+(.*)$/.exec(line)
-    if (!m || !patterns.some(p => m[3]!.includes(p)) || seen.has(m[3]!.slice(0, 160))) continue
-    seen.add(m[3]!.slice(0, 160))
-    jobList.push({ pid: m[1]!, elapsed: m[2]!, command: m[3]! })
-  }
 
-  const next: Detail = { gpus: gpuList, jobs: jobList }
+  const next: Detail = { gpus: gpuDetails(cardsOut, appsOut, owner), jobs: listJobs(stdout, patterns) }
   if (JSON.stringify(await read($, detail)) !== JSON.stringify(next)) await update($, detail, () => next)
 }
 
 // Open first, query after: awaiting the query first loses the "opened by a person" allowance and the pane will not open in a narrow terminal.
-async function openDetail($: EngineInterface) {
+async function openDetail($: EngineInterface, t: Strings) {
   const opened = await $.ui.open({ id: PANE, title: 'GPU · jobs' })
-  if (!opened.isPlaced) $.ui.toast(`Could not open the GPU pane: ${opened.reason}`)
+  if (!opened.isPlaced) $.ui.toast(t.paneFailed(opened.reason))
   await refreshDetail($).catch(() => {})
 }
 
@@ -210,16 +135,18 @@ async function seedEffort($: EngineInterface) {
 async function applyUsage(
   $: EngineInterface,
   usage: { rateLimits: Limit[]; context: { percent?: number } },
+  thresholds: Record<string, number>,
+  t: Strings,
 ) {
   await update($, limits, () => usage.rateLimits.map(l => ({ ...l })))
   await update($, contextPercent, () => usage.context.percent ?? null)
 
   const seen = await read($, warned)
   for (const l of usage.rateLimits) {
-    const at = THRESHOLD[l.kind]
+    const at = thresholds[l.kind]
     const id = `${l.kind}@${l.resetsAt ?? ''}`
     if (at === undefined || l.percentUsed < at || seen.includes(id)) continue
-    $.ui.toast(`${LABEL[l.kind] ?? l.kind} usage at ${l.percentUsed}% (threshold ${at}%)`)
+    $.ui.toast(t.usage(LABEL[l.kind] ?? l.kind, l.percentUsed, at))
     await update($, warned, w => [...w.slice(-8), id])
   }
 }
@@ -234,14 +161,19 @@ async function setModel($: EngineInterface, name: string) {
   await refreshAgents($)
 }
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
+  // Options come from the manifest's userConfig; each has a default, so a plain install behaves as before
+  // except that other mods' status lines are left alone unless hideQuietStatus is turned on.
+  const C = paletteOf(options.palette)
+  const t = stringsOf(options.language)
+  const thresholds = thresholdsOf(options.fiveHourThreshold, options.sevenDayThreshold)
   let timer: { cancel: () => void } | undefined
   let isDetailOpen = false
 
   on('session.start', async ($, e, next) => {
     const result = await next(e)
-    await applyUsage($, await $.session.usage())
-    await $.command.register({ name: 'gpu', description: 'Open a pane with every GPU and your training jobs' })
+    await applyUsage($, await $.session.usage(), thresholds, t)
+    await $.command.register({ name: 'gpu', description: t.gpuCommand })
     const stored = await $.store.get('versions')
     if (stored && typeof stored === 'object') await update($, versions, () => stored as Record<string, string>)
     await refreshAgents($)
@@ -265,8 +197,8 @@ export const register: Register = on => {
 
   on('command.run', { command: 'gpu' }, async $ => {
     isDetailOpen = true
-    await openDetail($)
-    return { text: 'Opened the GPU · jobs pane.' }
+    await openDetail($, t)
+    return { text: t.opened }
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
@@ -276,16 +208,16 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column">
         <Text bold color={C.model}>GPU</Text>
-        {d.gpus.length === 0 && <Text color={C.label}>no output from nvidia-smi</Text>}
+        {d.gpus.length === 0 && <Text color={C.label}>{t.noGpus}</Text>}
         {d.gpus.map(g => {
           const [filled, empty] = bar(g.util, 8)
           return (
             <Box key={`g-${g.index}`} flexDirection="column">
               <Text>
                 <Text bold>{g.index} </Text>
-                <Text color={pctColor(g.util)}>{filled}</Text>
-                <Text color={C.chipBg}>{empty}</Text>
-                <Text color={pctColor(g.util)}> {String(g.util).padStart(3)}%</Text>
+                <Text color={pctColor(C, g.util)}>{filled}</Text>
+                <Text color={C.track}>{empty}</Text>
+                <Text color={pctColor(C, g.util)}> {String(g.util).padStart(3)}%</Text>
                 <Text color={C.label}> {String(g.memGb).padStart(2)}/{g.totalGb}G {g.temp}°C</Text>
               </Text>
               <Text color={g.users === '' ? C.ok : C.chipFg} wrap="truncate-end">  {g.users === '' ? 'free' : g.users}</Text>
@@ -295,7 +227,7 @@ export const register: Register = on => {
         <Box marginTop={1}>
           <Text bold color={C.model}>Jobs</Text>
         </Box>
-        {d.jobs.length === 0 && <Text color={C.label}>no watched jobs</Text>}
+        {d.jobs.length === 0 && <Text color={C.label}>{t.noJobs}</Text>}
         {d.jobs.map(j => (
           <Text key={`j-${j.pid}`} wrap="truncate-end">
             <Text color={C.label}>{j.pid} </Text>
@@ -315,13 +247,16 @@ export const register: Register = on => {
     return result
   }).catch(($, e, next) => next(e))
 
-  // Drop other mods' status lines that say nothing is wrong (real warnings stay).
-  on('ui.status', ($, e, next) =>
-    next(e.text !== undefined && QUIET_STATUS.some(q => e.text!.includes(q)) ? { ...e, text: undefined } : e),
-  ).catch(($, e, next) => next(e))
+  // Opt-in: drop other mods' status lines that say nothing is wrong (real warnings stay).
+  // Off by default, because it removes another mod's output.
+  if (options.hideQuietStatus === true) {
+    on('ui.status', ($, e, next) =>
+      next(isQuietStatus(e.text) ? { ...e, text: undefined } : e),
+    ).catch(($, e, next) => next(e))
+  }
 
   on('session.measure', async ($, e, next) => {
-    await applyUsage($, e)
+    await applyUsage($, e, thresholds, t)
     return next(e)
   })
 
@@ -373,9 +308,9 @@ export const register: Register = on => {
             return (
               <Text key={l.kind}>
                 <Text color={C.label}>{LABEL[l.kind]} </Text>
-                <Text color={pctColor(l.percentUsed)}>{filled}</Text>
-                <Text color={C.chipBg}>{empty}</Text>
-                <Text bold color={pctColor(l.percentUsed)}>{isNarrow ? '' : ' '}{Math.round(l.percentUsed)}%</Text>
+                <Text color={pctColor(C, l.percentUsed)}>{filled}</Text>
+                <Text color={C.track}>{empty}</Text>
+                <Text bold color={pctColor(C, l.percentUsed)}>{isNarrow ? '' : ' '}{Math.round(l.percentUsed)}%</Text>
                 <Text color={C.label}> {remaining(l.resetsAt, now)}</Text>
               </Text>
             )
@@ -383,17 +318,17 @@ export const register: Register = on => {
           {ctx !== null && (
             <Text>
               <Text color={C.label}>ctx </Text>
-              <Text bold color={pctColor(ctx)}>{ctx}%</Text>
+              <Text bold color={pctColor(C, ctx)}>{ctx}%</Text>
             </Text>
           )}
           {gs !== null && (
-            <Button key="gpu" plain onPress={() => { isDetailOpen = true; void openDetail($).catch(() => {}) }}>
+            <Button key="gpu" plain onPress={() => { isDetailOpen = true; void openDetail($, t).catch(() => {}) }}>
               <Text color={C.label}>gpu </Text>
               {busy.length === 0 ? (
                 <Text color={C.ok}>free</Text>
               ) : (
                 busy.map((g, i) => (
-                  <Text key={`gpu-${g.index}`} color={g.util >= 5 ? pctColor(g.util) : C.label}>
+                  <Text key={`gpu-${g.index}`} color={g.util >= 5 ? pctColor(C, g.util) : C.label}>
                     {i > 0 ? ' ' : ''}
                     {g.index}:{g.util >= 5 ? `${g.util}%` : `${g.memGb}G`}
                   </Text>

@@ -108,11 +108,17 @@ GPU 와 job 칸은 기계가 값을 낼 수 있을 때만 나온다.
 
 ## 설정
 
-색은 `hooks/register.tsx` 위쪽의 상수 `C` 하나에 모여 있다. 각 값은 hex 색이나
-테마 키다. 거기서 고치고 다시 설치하면 된다.
+설치할 때 고르거나, 나중에 `claude plugin configure gpu-panel@claude-gpu-panel` 로 바꾼다.
 
-한도 알림 임계치는 같은 파일의 `THRESHOLD` 다. 5시간 창은 80%, 7일 창은 70%
-이고, 창마다 초기화될 때까지 한 번만 알린다.
+| 항목 | 기본값 | 하는 일 |
+|---|---|---|
+| `language` | `en` | 한도 알림, `/gpu` 설명, 창의 빈 상태 문구의 언어. `en` 또는 `ko`. 패널의 라벨(`5h`, `ctx`, `gpu`)은 바뀌지 않는다 |
+| `palette` | `dark` | `dark` 는 어두운 터미널에 맞춘 고정 색. `theme` 은 Claude Code 테마 색을 따라가서 밝은 배경에서도 읽힌다 |
+| `fiveHourThreshold` | `80` | 5시간 사용량이 이 퍼센트에 닿으면 창마다 한 번 알린다 |
+| `sevenDayThreshold` | `70` | 7일 창에 같은 규칙 |
+| `hideQuietStatus` | `false` | 다른 mod 의 상태 줄 가운데 이상 없다는 내용뿐인 것(`no active cases`, `waste≈0`)을 숨긴다. 경고는 항상 남는다. 남의 mod 출력을 지우는 일이라 기본은 꺼짐 |
+
+임계치가 1~100 밖이면 기본값으로 돌아간다.
 
 ## 한계
 

@@ -62,3 +62,19 @@ test('draws without border or bars in a narrow terminal', async ($, on) => {
   expect(await ui.find({ type: 'Text', text: /idle/ })).toBeFalsy()
   await ui.unmount()
 })
+
+test('language ko and a custom threshold: the toast is Korean and fires at the configured level', { options: { language: 'ko', fiveHourThreshold: 90 } }, async ($, on) => {
+  const toasts: string[] = []
+  on('ui.toast', (_, e) => {
+    toasts.push(typeof e === 'string' ? e : JSON.stringify(e))
+    return { value: undefined }
+  })
+  on('session.measure', (_, e) => ({ changed: e.changed }))
+
+  await $.session.measure(MEASURE) // 82% is under the 90% set here
+  expect(toasts.length).toBe(0)
+
+  await $.session.measure({ ...MEASURE, rateLimits: [{ kind: 'five_hour', percentUsed: 93, resetsAt: '2026-11-19T12:00:00Z' }] })
+  expect(toasts.length).toBe(1)
+  expect(toasts[0]).toMatch(/5h 한도 93%/)
+})

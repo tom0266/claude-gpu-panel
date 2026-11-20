@@ -112,11 +112,17 @@ requests and calls no model.
 
 ## Configuration
 
-Colors are a single constant near the top of `hooks/register.tsx`, named `C`.
-Each entry is a hex color or a theme key. Change them there and reinstall.
+Set these when you install, or later with `claude plugin configure gpu-panel@claude-gpu-panel`.
 
-Thresholds for the usage toast are `THRESHOLD` in the same file: 80% for the
-five-hour window, 70% for the seven-day one. Each window warns once per reset.
+| Option | Default | What it does |
+|---|---|---|
+| `language` | `en` | Language of the usage toast, the `/gpu` description and the pane's empty states: `en` or `ko`. The panel's own labels (`5h`, `ctx`, `gpu`) do not change |
+| `palette` | `dark` | `dark` uses fixed colors tuned for a dark terminal. `theme` follows the Claude Code theme, so it also reads on a light background |
+| `fiveHourThreshold` | `80` | Toast once per window when 5-hour usage reaches this percentage |
+| `sevenDayThreshold` | `70` | The same for the 7-day window |
+| `hideQuietStatus` | `false` | Hide status lines from other mods that only say nothing is wrong (`no active cases`, `waste≈0`). Warnings always stay. Off by default, because it removes another mod's output |
+
+A threshold outside 1 to 100 falls back to its default.
 
 ## Limits
 
